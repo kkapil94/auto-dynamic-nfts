@@ -19,11 +19,15 @@ import "@chainlink/contracts/src/v0.8/KeeperCompatible.sol";
 // and will not work on any test or main livenets.
 import "hardhat/console.sol";
 
-contract BullBear is  ERC721Enumerable, ERC721URIStorage, Ownable {
+contract BullBear is  ERC721Enumerable, ERC721URIStorage, Ownable, KeeperCompatible {
     using Counters for Counters.Counter;
 
     Counters.Counter private _tokenIdCounter;
-
+    uint256 public interval;
+    uint256 public lastTimeStamp;
+    int256 public currentPrice;
+    AggregatorV3Interface public priceFeed;
+    event TokensUpdated(string trend);
     // IPFS URIs for the dynamic nft graphics/metadata.
     // NOTE: These connect to my IPFS Companion node.
     // You should upload the contents of the /ipfs folder to your own node for development.
@@ -38,7 +42,12 @@ contract BullBear is  ERC721Enumerable, ERC721URIStorage, Ownable {
         "https://ipfs.io/ipfs/QmakMeC7q7WYamw7t487DsoG2x6mdRDYrN5gGz7YvicbVN?filename=simple_bear.json.url"
     ];
 
-    constructor() ERC721("Bull&Bear", "BBTK") {}
+    constructor(uint updateInterval,address _priceFeed) ERC721("Bull&Bear", "BBTK") {
+        interval = updateInterval;
+        lastTimeStamp = block.timestamp;
+        priceFeed = AggregatorV3Interface(_priceFeed);
+        currentPrice = getLatestPrice();
+    }
 
     function safeMint(address to) public {
         // Current counter value will be the minted token's token ID.
@@ -87,6 +96,63 @@ contract BullBear is  ERC721Enumerable, ERC721URIStorage, Ownable {
     {
         return super.tokenURI(tokenId);
     }
+
+     function checkUpkeep(bytes calldata) external view override returns (bool upkeepNeeded, bytes  memory) {
+    upkeepNeeded = (block.timestamp - lastTimeStamp) > interval;
+     }
+
+    function updateTokenUris(string memory trend) internal{
+        if (compareString("brear",trend)) {
+            for (uint i = 0; i < _tokenIdCounter.current(); i++) {
+                _setTokenURI(i,bearUrisIpfs[0]);
+            }
+        }else{
+            for (uint i = 0; i < _tokenIdCounter.current(); i++) {
+                _setTokenURI(i,bullUrisIpfs[0]);
+            }
+        }
+        emit TokensUpdated(trend);
+    }
+
+    //helpers
+    function  compareString(string memory a,string memory b)internal pure returns(bool){
+        return (keccak256(abi.encodePacked((a))) == keccak256(abi.encodePacked((b))));
+    }
+
+    function setInterval(uint256 newInterval)public onlyOwner{
+        interval = newInterval;
+    }
+
+    function setPriceFeed(address newFeed)public onlyOwner{
+        priceFeed = AggregatorV3Interface(newFeed);
+    }
+
+     function performUpkeep(bytes calldata) external  override {
+        if((block.timestamp - lastTimeStamp) > interval){
+            lastTimeStamp = block.timestamp;
+            int latestPrice = getLatestPrice();
+            if (latestPrice == currentPrice) {
+                return;
+            }
+            if (latestPrice < currentPrice) {
+                updateTokenUris("bear");
+            }else{
+                updateTokenUris("bull");
+            }
+            currentPrice = latestPrice;
+        }
+     }
+
+     function getLatestPrice() public view returns(int256){
+        (
+            /*uint80 roundID*/,
+            int price,
+            /*uint startedAt*/,
+            /*uint timeStamp*/,
+            /*uint80 answeredInRound*/
+        ) = priceFeed.latestRoundData();
+       return price;
+     }
 
     function supportsInterface(bytes4 interfaceId)
         public

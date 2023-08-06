@@ -1,5 +1,4 @@
-require("@nomiclabs/hardhat-ethers")
-require("@nomiclabs/hardhat-etherscan")
+require("@nomicfoundation/hardhat-toolbox")
 require("dotenv").config();
 /** @type import('hardhat/config').HardhatUserConfig */
 
